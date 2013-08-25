@@ -1,0 +1,222 @@
+/*
+This programm is created to control the LG TVnitors via serial communication.
+ Designed as TV, the monitor functions are not same as clear monitor. 
+ The main idea is to control the power functions of the display. 
+ Some trics are used such as volume control and mute.
+ This is almost final version.
+ */
+
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data; 
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using System.IO.Ports;
+using System.Threading;
+using Microsoft.Win32;
+using System.Runtime.InteropServices;
+
+namespace WindowsFormsApplication1
+{
+
+    public partial class LGE : Form
+    {
+
+        public const byte
+            WakeCMD = 1, SleepCMD = 2, HDMI1 = 3, AnalogCable = 4, VolumeTo = 5, Mute = 6, LeftDash = 7;
+  
+
+        public LGE()
+        {
+            InitializeComponent();
+
+            // SystemEvents.PowerModeChanged += OnPowerModeChanged;
+            if ( !CommandExec(LeftDash, 0) )              
+                CommandExec(WakeCMD, 15);
+            CommandExec(HDMI1, 1);
+            trackBar1.Value = 15;
+            trackBar1_Scroll(null, null);
+        }
+
+        private void trackBar1_Scroll()
+        {
+            throw new NotImplementedException();
+        }
+
+        [System.Security.Permissions.PermissionSet(System.Security.Permissions.SecurityAction.Demand, Name = "FullTrust")]
+        protected override void WndProc(ref Message m)
+        {
+            Message b;
+
+            b = m;
+
+            if (b.Msg == 0x0112)// WM_SYSCOMMAND
+            {
+                //MessageBox.Show("0 x0112   L:" + b.LParam.ToString() + "  W:" + b.WParam.ToString());
+                if (b.WParam.ToInt32() == 0xF170)
+                {
+                    if (b.LParam.ToInt32() == -1)
+                        CommandExec(WakeCMD, 15);
+                    if ((b.LParam.ToInt32() == 1) || (b.LParam.ToInt32() == 2))
+                        CommandExec(SleepCMD, 1);
+                }
+            }
+
+            if (b.Msg == 0x218)
+            {
+
+                //  MessageBox.Show("0x218   L:" + b.LParam.ToString() + "           W:" + b.WParam.ToString());
+                //    MessageBox.Show(Convert.ToString(b.WParam.ToInt32()));
+
+                switch (b.WParam.ToInt32())
+                {
+                    case 7:
+                    case 18:
+                        //Resume
+                        CommandExec(WakeCMD, 15);
+                        break;
+                    case 4:
+                        CommandExec(SleepCMD, 1);
+                        break;
+                }
+            }
+
+            /*if (b.Msg == 0x48)// WM_POWER 
+            {
+                MessageBox.Show("0 x48   L:" + b.LParam.ToString() + "  W:" + b.WParam.ToString());
+            }*/
+
+            if (b.Msg == 0x16)//WM_ENDSESSION
+            {
+                //MessageBox.Show("0x16   L:" + b.LParam.ToString() + "    W:" + b.WParam.ToString());
+                if ((b.LParam.ToInt32() == 0) && (b.WParam.ToInt32() == 1))
+                    CommandExec(SleepCMD, 1);
+            }
+
+
+            base.WndProc(ref m);
+        }
+
+
+
+        public bool CommandExec(byte Comm, byte sleep, int data = 0)
+        {
+
+            try
+            {
+                serialPort1.Open();
+            }
+            catch
+            {
+                return false;
+            }
+
+            switch (Comm)
+            {
+                case WakeCMD:
+                    serialPort1.WriteLine("ka 0 1" + (char)13);
+                    break;
+                case SleepCMD:
+                    serialPort1.WriteLine("ka 0 0" + (char)13);
+                    break;
+                case HDMI1:
+                    serialPort1.WriteLine("xb 0 90" + (char)13);
+                    break;
+                case AnalogCable:
+                    serialPort1.WriteLine("xb 0 11" + (char)13);
+                    break;
+                case VolumeTo:
+                    serialPort1.WriteLine("kf 0 " + data.ToString("X2") + (char)13);
+                    break;
+                case Mute:
+                    if (button1.Text == "Mute")
+                    {
+                        serialPort1.WriteLine("ke 0 0" + (char)13);
+                        button1.Text = "UnMute";
+                    }
+                    else
+                    {
+                        serialPort1.WriteLine("ke 0 1" + (char)13);
+                        button1.Text = "Mute";
+                    }
+                    break;
+                case LeftDash:
+                    serialPort1.WriteLine("mc 0 07" + (char)13);
+                    break;
+                default: 
+                    break;
+            }
+
+            System.Threading.Thread.Sleep(sleep * 1000+300);
+
+
+            string S = "";
+            S = serialPort1.ReadExisting();
+
+            bool Res;
+            if (S.IndexOf("OK") > 0)
+                Res = true;
+            else
+                Res = false;
+
+            serialPort1.Close();
+
+            return Res;
+        }
+
+        private void button1_Click(object sender, EventArgs e)
+        {
+            // this.Visible = false; 
+            CommandExec(Mute, 0);
+        }
+
+        private void trackBar1_Scroll(object sender, EventArgs e)
+        {
+            if (button1.Text == "UnMute")
+                button1.Text = "Mute";
+            CommandExec(VolumeTo, 0, trackBar1.Value);
+            label1.Text = trackBar1.Value.ToString("D2");
+        }
+
+        private void trackBar1_KeyUp(object sender, KeyEventArgs e)
+        {
+            System.Media.SystemSounds.Beep.Play();
+        }
+
+        private void trackBar1_MouseUp(object sender, MouseEventArgs e)
+        {
+            System.Media.SystemSounds.Beep.Play();
+        }
+
+        private void LG_Activated(object sender, EventArgs e)
+        {
+            trackBar1.Focus();
+
+        }
+
+
+        [DllImport("user32")]
+        public static extern IntPtr SendMessage(IntPtr hWnd, uint wMsg, uint wParam, int lParam);
+
+        private void button2_Click(object sender, EventArgs e)
+        {
+            
+            SendMessage(this.Handle, 0x0112, 0xF170, 2);
+            Thread.Sleep(3000);
+            SendMessage(this.Handle, 0x0112, 0xF170, -1);
+        }
+
+
+        /*   
+          private static void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
+          {
+              //e.
+          }*/
+
+
+    }
+}
